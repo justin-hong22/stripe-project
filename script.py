@@ -35,8 +35,8 @@ def main():
         start_date = datetime.fromtimestamp(subscription.start_date).strftime('%Y-%m-%d');
         end_date = "N/A" if subscription.canceled_at == None else datetime.fromtimestamp(subscription.canceled_at).strftime('%Y-%m-%d');
 
-        customer = [name, email, cus_id, start_date, end_date, currency];
-        rows.append(customer);
+        row = [name, email, cus_id, start_date, end_date, currency];
+        rows.append(row);
 
     sendToSheets(rows);
 
