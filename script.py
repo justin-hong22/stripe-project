@@ -4,6 +4,7 @@ import stripe # type: ignore
 import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 def sendToSheets(rows):
     CREDENTIALS_FILE = "./credentials.json"
@@ -17,33 +18,34 @@ def sendToSheets(rows):
     sheet.append_rows(rows)
     print("Data successfully written!")
 
-def calculateMRR(subscriptions):
+def calculateMRR(subscriptions, currency):
     active_mrr = {};
     for sub in subscriptions.auto_paging_iter():
         start_date = datetime.fromtimestamp(sub['start_date'])
         end_date = datetime.fromtimestamp(sub['ended_at']) if sub['ended_at'] else datetime.now()
 
         for item in sub['items']['data']:
-            price = item['price']
-            unit_amount = price['unit_amount']
-            interval_count = price['recurring']['interval_count']
-            quantity = item['quantity']
-            monthly_amount = (unit_amount * quantity) * interval_count
+            price = item['price'];
+            unit_amount = price['unit_amount'] / 100.00 if currency == "usd" else price['unit_amount'];
+            interval_count = price['recurring']['interval_count'];
+            quantity = item['quantity'];
+            monthly_amount = round(unit_amount * quantity * interval_count, 2) if currency == 'usd' else unit_amount * quantity * interval_count;
             
             current_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
             last_month = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
             while current_month <= last_month:
                 key = current_month.strftime('%Y-%m');
-                active_mrr[key] = active_mrr.get(key, 0) + monthly_amount;
+                active_mrr[key] = format(round(active_mrr.get(key, 0) + monthly_amount, 2), ".2f") if currency == 'usd' else active_mrr.get(key, 0) + monthly_amount;
                 current_month += timedelta(days=32);
                 current_month = current_month.replace(day=1);
 
     output = [];
+    default_val = '0.00' if currency == 'usd' else 0;
     current = datetime(2021, 3, 1);
     now = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0);
     while current <= now:
         key = current.strftime('%Y-%m');
-        output.append(int(active_mrr.get(key, 0)));
+        output.append(active_mrr.get(key, default_val));
         current += timedelta(days=32);
         current = current.replace(day=1);
 
@@ -65,7 +67,7 @@ def main():
         subscriptions = stripe.Subscription.list(customer = cus_id, status='all', limit=100);    
         start_date = datetime.fromtimestamp(subscriptions.data[0].start_date).strftime('%Y-%m-%d');
         end_date = "N/A" if subscriptions.data[0].ended_at == None else datetime.fromtimestamp(subscriptions.data[0].ended_at).strftime('%Y-%m-%d');
-        mrr = calculateMRR(subscriptions);
+        mrr = calculateMRR(subscriptions, currency);
 
         row = [name, email, cus_id, start_date, end_date, currency] + mrr;
         rows.append(row);
