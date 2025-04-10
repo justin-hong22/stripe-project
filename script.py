@@ -15,6 +15,10 @@ def sendToSheets(row, cus_id, col_index):
     sheet = client.open_by_key(SHEET_ID).sheet1
     cus_ids = sheet.col_values(3);
 
+    if col_index > sheet.col_count:
+        sheet.add_cols(col_index - sheet.col_count);
+        sheet.update_cell(1, col_index, str(datetime.now().year) + "-" + str(datetime.now().month));
+
     if cus_id in cus_ids:
         row_index = cus_ids.index(cus_id) + 1;
         new_mrr = row[-1];
