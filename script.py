@@ -4,9 +4,8 @@ import stripe # type: ignore
 import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
 from datetime import datetime, timedelta
-from decimal import Decimal
 
-def sendToSheets(rows):
+def sendToSheets(row, cus_id, col_index):
     CREDENTIALS_FILE = "./credentials.json"
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
@@ -14,9 +13,14 @@ def sendToSheets(rows):
 
     SHEET_ID = "1lpdP6mc9RBsyPgEivzSsJCN2YmhQob-dqBGYOFczMxo"
     sheet = client.open_by_key(SHEET_ID).sheet1
+    cus_ids = sheet.col_values(3);
 
-    sheet.append_rows(rows)
-    print("Data successfully written!")
+    if cus_id in cus_ids:
+        row_index = cus_ids.index(cus_id) + 1;
+        new_mrr = row[-1];
+        sheet.update_cell(row_index, col_index, new_mrr);
+    else:
+        sheet.append_row(row);
 
 def calculateMRR(subscriptions, currency):
     active_mrr = {};
@@ -51,12 +55,22 @@ def calculateMRR(subscriptions, currency):
 
     return output;
 
+def getNewColumnIndex():
+    start_year = 2021;
+    start_month = 3;
+
+    now = datetime.now();
+    end_year = now.year;
+    end_month = now.month;
+
+    return ((end_year - start_year) * 12) + (end_month - start_month) + 7;
+
 def main():
     load_dotenv();
     stripe.api_key = os.getenv('STRIPE_API_KEY');
 
     #Getting Customer Info Here
-    rows = [];
+    new_col_index = getNewColumnIndex();
     customers = stripe.Customer.list();
     for customer in customers.auto_paging_iter():        
         name = customer.name;
@@ -70,9 +84,7 @@ def main():
         mrr = calculateMRR(subscriptions, currency);
 
         row = [name, email, cus_id, start_date, end_date, currency] + mrr;
-        rows.append(row);
-
-    sendToSheets(rows);
+        sendToSheets(row, cus_id, new_col_index);
 
 if __name__ == "__main__":
   main()
