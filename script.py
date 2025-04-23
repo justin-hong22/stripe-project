@@ -5,6 +5,7 @@ import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
 from datetime import datetime, timedelta
 import math
+from dateutil.relativedelta import relativedelta # type: ignore
 
 def openSheet():
     CREDENTIALS_FILE = "./credentials.json";
@@ -33,7 +34,7 @@ def calculateMRR(subscriptions, currency):
     active_mrr = {};
     for sub in subscriptions.auto_paging_iter():
         start_date = datetime.fromtimestamp(sub['start_date']);
-        end_date = datetime.fromtimestamp(sub['ended_at']) if sub['ended_at'] else datetime.now();
+        end_date = datetime.fromtimestamp(sub['ended_at']) if sub['ended_at'] else datetime.now() + relativedelta(months = 1);
         discount = sub['discount'];
 
         monthly_total = 0;
@@ -62,7 +63,7 @@ def calculateMRR(subscriptions, currency):
         monthly_total = math.floor(monthly_total);
         current_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
         last_month = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
-        while current_month <= last_month:
+        while current_month < last_month:
             key = current_month.strftime('%Y-%m');
             active_mrr[key] = format(round(active_mrr.get(key, 0) + monthly_total, 2), ".2f") if currency == 'usd' else active_mrr.get(key, 0) + monthly_total;
             current_month += timedelta(days=32);
@@ -105,7 +106,7 @@ def main():
         cus_id = customer.id;
         currency = customer.currency;
 
-        subscriptions = stripe.Subscription.list(customer = cus_id, status='active', limit=100); 
+        subscriptions = stripe.Subscription.list(customer = cus_id, status='all', limit=100); 
         if not subscriptions.data:
             continue;
 
