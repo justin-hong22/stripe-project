@@ -4,6 +4,7 @@ import stripe # type: ignore
 import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
 from datetime import datetime, timedelta
+import math
 
 def openSheet():
     CREDENTIALS_FILE = "./credentials.json";
@@ -58,6 +59,7 @@ def calculateMRR(subscriptions, currency):
             if amount_off:
                 monthly_total = monthly_total - (amount_off / 12);
         
+        monthly_total = math.floor(monthly_total);
         current_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
         last_month = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
         while current_month <= last_month:
