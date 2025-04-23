@@ -31,23 +31,40 @@ def sendToSheets(sheet, row, cus_id, col_index):
 def calculateMRR(subscriptions, currency):
     active_mrr = {};
     for sub in subscriptions.auto_paging_iter():
-        start_date = datetime.fromtimestamp(sub['start_date'])
-        end_date = datetime.fromtimestamp(sub['ended_at']) if sub['ended_at'] else datetime.now()
+        start_date = datetime.fromtimestamp(sub['start_date']);
+        end_date = datetime.fromtimestamp(sub['ended_at']) if sub['ended_at'] else datetime.now();
+        discount = sub['discount'];
 
+        monthly_total = 0;
         for item in sub['items']['data']:
             price = item['price'];
-            unit_amount = price['unit_amount'] / 100.00 if currency == "usd" else price['unit_amount'];
+            unit_amount = price['unit_amount'] / 100 if currency == "usd" else price['unit_amount'];
             interval_count = price['recurring']['interval_count'];
             quantity = item['quantity'];
-            monthly_amount = round(unit_amount * quantity * interval_count, 2) if currency == 'usd' else unit_amount * quantity * interval_count;
+
+            if price['recurring']['interval'] == 'month':
+                monthly_amount = unit_amount * quantity * interval_count;
+            elif price['recurring']['interval'] == 'year':
+                monthly_amount = (unit_amount / 12) * quantity * interval_count;
             
-            current_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
-            last_month = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
-            while current_month <= last_month:
-                key = current_month.strftime('%Y-%m');
-                active_mrr[key] = format(round(active_mrr.get(key, 0) + monthly_amount, 2), ".2f") if currency == 'usd' else active_mrr.get(key, 0) + monthly_amount;
-                current_month += timedelta(days=32);
-                current_month = current_month.replace(day=1);
+            monthly_total += monthly_amount;
+
+        if discount:
+            percent_off = discount['coupon']['percent_off'];
+            if percent_off:
+                monthly_total = monthly_total * (1 - percent_off / 100);
+        
+            amount_off = discount['coupon']['amount_off'];
+            if amount_off:
+                monthly_total = monthly_total - (amount_off / 12);
+        
+        current_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
+        last_month = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
+        while current_month <= last_month:
+            key = current_month.strftime('%Y-%m');
+            active_mrr[key] = format(round(active_mrr.get(key, 0) + monthly_total, 2), ".2f") if currency == 'usd' else active_mrr.get(key, 0) + monthly_total;
+            current_month += timedelta(days=32);
+            current_month = current_month.replace(day=1);
 
     output = [];
     default_val = '0.00' if currency == 'usd' else 0;
@@ -79,13 +96,17 @@ def main():
     sheet = openSheet();
     new_col_index = getNewColumnIndex();
     customers = stripe.Customer.list();
+
     for customer in customers.auto_paging_iter():        
         name = customer.name;
         email = customer.email;
         cus_id = customer.id;
         currency = customer.currency;
 
-        subscriptions = stripe.Subscription.list(customer = cus_id, status='all', limit=100);    
+        subscriptions = stripe.Subscription.list(customer = cus_id, status='active', limit=100); 
+        if not subscriptions.data:
+            continue;
+
         start_date = datetime.fromtimestamp(subscriptions.data[0].start_date).strftime('%Y-%m-%d');
         end_date = "N/A" if subscriptions.data[0].ended_at == None else datetime.fromtimestamp(subscriptions.data[0].ended_at).strftime('%Y-%m-%d');
         mrr = calculateMRR(subscriptions, currency);
