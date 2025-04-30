@@ -1,11 +1,9 @@
-import os
-from dotenv import load_dotenv # type: ignore
 import stripe # type: ignore
 import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
 from datetime import datetime, timedelta
-import math
-from dateutil.relativedelta import relativedelta # type: ignore
+import time
+import csv
 
 def openSheet():
     CREDENTIALS_FILE = "./credentials.json";
@@ -17,71 +15,7 @@ def openSheet():
     sheet = client.open_by_key(SHEET_ID).sheet1;
     return sheet;
 
-def sendToSheets(sheet, row, cus_id, col_index):
-    cus_ids = sheet.col_values(3);
-    if col_index > sheet.col_count:
-        sheet.add_cols(col_index - sheet.col_count);
-        sheet.update_cell(1, col_index, str(datetime.now().year) + "-" + str(datetime.now().month));
-
-    if cus_id in cus_ids:
-        row_index = cus_ids.index(cus_id) + 1;
-        new_mrr = row[-1];
-        sheet.update_cell(row_index, col_index, new_mrr);
-    else:
-        sheet.append_row(row);
-
-def calculateMRR(subscriptions, currency):
-    active_mrr = {};
-    for sub in subscriptions.auto_paging_iter():
-        start_date = datetime.fromtimestamp(sub['start_date']);
-        end_date = datetime.fromtimestamp(sub['ended_at']) if sub['ended_at'] else datetime.now() + relativedelta(months = 1);
-        discount = sub['discount'];
-
-        monthly_total = 0;
-        for item in sub['items']['data']:
-            price = item['price'];
-            unit_amount = price['unit_amount'] / 100 if currency == "usd" else price['unit_amount'];
-            interval_count = price['recurring']['interval_count'];
-            quantity = item['quantity'];
-
-            if price['recurring']['interval'] == 'month':
-                monthly_amount = unit_amount * quantity * interval_count;
-            elif price['recurring']['interval'] == 'year':
-                monthly_amount = (unit_amount / 12) * quantity * interval_count;
-            
-            monthly_total += monthly_amount;
-
-        if discount:
-            percent_off = discount['coupon']['percent_off'];
-            if percent_off:
-                monthly_total = monthly_total * (1 - percent_off / 100);
-        
-            amount_off = discount['coupon']['amount_off'];
-            if amount_off:
-                monthly_total = monthly_total - (amount_off / 12);
-        
-        monthly_total = math.floor(monthly_total);
-        current_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
-        last_month = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0);
-        while current_month < last_month:
-            key = current_month.strftime('%Y-%m');
-            active_mrr[key] = format(round(active_mrr.get(key, 0) + monthly_total, 2), ".2f") if currency == 'usd' else active_mrr.get(key, 0) + monthly_total;
-            current_month += timedelta(days=32);
-            current_month = current_month.replace(day=1);
-
-    output = [];
-    default_val = '0.00' if currency == 'usd' else 0;
-    current = datetime(2021, 3, 1);
-    now = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0);
-    while current <= now:
-        key = current.strftime('%Y-%m');
-        output.append(active_mrr.get(key, default_val));
-        current += timedelta(days=32);
-        current = current.replace(day=1);
-
-    return output;
-
-def getNewColumnIndex():
+def addNewColumn(sheet):
     start_year = 2021;
     start_month = 3;
 
@@ -89,33 +23,61 @@ def getNewColumnIndex():
     end_year = now.year;
     end_month = now.month;
 
-    return ((end_year - start_year) * 12) + (end_month - start_month) + 7;
+    col_index = ((end_year - start_year) * 12) + (end_month - start_month) + 7;
+    if col_index > sheet.col_count:
+        sheet.add_cols(col_index - sheet.col_count);
+        sheet.update_cell(1, col_index, str(datetime.now().year) + "-" + str(datetime.now().month));
+
+    return col_index;
+
+def createNewCustomerRow():
+    output = [];
+    current = datetime(2021, 3, 1);
+    now = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0);
+    while current < now:
+        output.append(0);
+        current += timedelta(days=32);
+        current = current.replace(day=1);
+    
+    return output;
 
 def main():
-    load_dotenv();
-    stripe.api_key = os.getenv('STRIPE_API_KEY');
-
-    #Getting Customer Info Here
     sheet = openSheet();
-    new_col_index = getNewColumnIndex();
-    customers = stripe.Customer.list();
+    new_col_index = addNewColumn(sheet);
+    existing_customers = [c.strip().strip('"') for c in sheet.col_values(3)[1:]];
+    new_row_zeros = createNewCustomerRow();
 
-    for customer in customers.auto_paging_iter():        
-        name = customer.name;
-        email = customer.email;
-        cus_id = customer.id;
-        currency = customer.currency;
+    today = datetime.today();
+    today_str = today.strftime('%Y-%m-%d');
+    first_day = today.replace(day=1);
+    first_day_str = first_day.strftime('%Y-%m-%d');
+    file_name = 'MRR_per_Subscriber_-_monthly_' + first_day_str + '_to_' + today_str +'.csv';
+    
+    with open(file_name, 'r', encoding='utf-8') as file:
+        customers = csv.reader(file)
+        next(customers)
 
-        subscriptions = stripe.Subscription.list(customer = cus_id, status='all', limit=100); 
-        if not subscriptions.data:
-            continue;
+        count = 0;
+        for customer in customers:
+            name = customer[0];
+            email = customer[1];
+            cus_id = customer[2];
+            start_date = customer[3];
+            end_date = customer[4];
+            currency = customer[5];
+            mrr = customer[6];
 
-        start_date = datetime.fromtimestamp(subscriptions.data[0].start_date).strftime('%Y-%m-%d');
-        end_date = "N/A" if subscriptions.data[0].ended_at == None else datetime.fromtimestamp(subscriptions.data[0].ended_at).strftime('%Y-%m-%d');
-        mrr = calculateMRR(subscriptions, currency);
+            if cus_id in existing_customers:
+                row_index = existing_customers.index(cus_id) + 2;
+                sheet.update_cell(row_index, new_col_index, mrr);
+            else:
+                row = [name, email, cus_id, start_date, end_date, currency] + new_row_zeros + [mrr];
+                sheet.append_row(row);
 
-        row = [name, email, cus_id, start_date, end_date, currency] + mrr;
-        sendToSheets(sheet, row, cus_id, new_col_index);
+            #Pausing after every 50 customers to sleep for 40 seconds to avoid overloading the gSheets API
+            count += 1;
+            if count % 50 == 0:
+                time.sleep(40);
 
 if __name__ == "__main__":
   main()
