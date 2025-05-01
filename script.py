@@ -26,7 +26,7 @@ def addNewColumn(sheet):
     col_index = ((end_year - start_year) * 12) + (end_month - start_month) + 7;
     if col_index > sheet.col_count:
         sheet.add_cols(col_index - sheet.col_count);
-        sheet.update_cell(1, col_index, str(datetime.now().year) + "-" + str(datetime.now().month));
+        sheet.update_cell(1, col_index, str(end_year) + "-" + str(end_month));
 
     return col_index;
 
@@ -51,13 +51,14 @@ def main():
     today_str = today.strftime('%Y-%m-%d');
     first_day = today.replace(day=1);
     first_day_str = first_day.strftime('%Y-%m-%d');
+
     file_name = 'MRR_per_Subscriber_-_monthly_' + first_day_str + '_to_' + today_str +'.csv';
-    
     with open(file_name, 'r', encoding='utf-8') as file:
         customers = csv.reader(file)
         next(customers)
 
-        count = 0;
+        updates = [];
+        new_rows = [];
         for customer in customers:
             name = customer[0];
             email = customer[1];
@@ -69,15 +70,22 @@ def main():
 
             if cus_id in existing_customers:
                 row_index = existing_customers.index(cus_id) + 2;
-                sheet.update_cell(row_index, new_col_index, mrr);
+                updates.append({
+                    'range': gspread.utils.rowcol_to_a1(row_index, new_col_index),
+                    'values': [[mrr]]
+                });
             else:
                 row = [name, email, cus_id, start_date, end_date, currency] + new_row_zeros + [mrr];
-                sheet.append_row(row);
-
-            #Pausing after every 50 customers to sleep for 40 seconds to avoid overloading the gSheets API
-            count += 1;
-            if count % 50 == 0:
-                time.sleep(40);
+                new_rows.append(row);
+        
+        if updates:
+            sheet.batch_update([{
+                'range': update['range'],
+                'values': update['values']
+            } for update in updates])
+        
+        if new_rows:
+            sheet.append_rows(new_rows);
 
 if __name__ == "__main__":
   main()
