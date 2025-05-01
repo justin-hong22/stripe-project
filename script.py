@@ -2,7 +2,6 @@ import stripe # type: ignore
 import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
 from datetime import datetime, timedelta
-import time
 import csv
 
 def openSheet():
@@ -23,6 +22,12 @@ def addNewColumn(sheet):
     end_year = now.year;
     end_month = now.month;
 
+    if now.day == 1:
+        if now.month == 1:
+            end_month = 12;
+        else:
+            end_month = now.month - 1;
+
     col_index = ((end_year - start_year) * 12) + (end_month - start_month) + 7;
     if col_index > sheet.col_count:
         sheet.add_cols(col_index - sheet.col_count);
@@ -34,6 +39,13 @@ def createNewCustomerRow():
     output = [];
     current = datetime(2021, 3, 1);
     now = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0);
+
+    if now.day == 1:
+        if now.month == 1:
+            now = now.replace(year = now.year - 1, month = 12, day = 1);
+        else:
+            now = now.replace(month = now.month - 1, day = 1);
+
     while current < now:
         output.append(0);
         current += timedelta(days=32);
@@ -41,18 +53,27 @@ def createNewCustomerRow():
     
     return output;
 
+def getReportName():
+    today = datetime.today();
+    if today.day == 1:
+        if today.month == 1:
+            start_date = today.replace(year = today.year - 1, month = 12, day = 1);
+        else:
+            start_date = today.replace(month = today.month - 1, day = 1);
+    else:
+        start_date = today.replace(day = 1);
+
+    first_day_str = start_date.strftime('%Y-%m-%d');
+    today_str = today.strftime('%Y-%m-%d');
+    return 'mrr_reports/MRR_per_Subscriber_-_monthly_' + first_day_str + '_to_' + today_str +'.csv';
+
 def main():
     sheet = openSheet();
     new_col_index = addNewColumn(sheet);
     existing_customers = [c.strip().strip('"') for c in sheet.col_values(3)[1:]];
     new_row_zeros = createNewCustomerRow();
+    file_name = getReportName();
 
-    today = datetime.today();
-    today_str = today.strftime('%Y-%m-%d');
-    first_day = today.replace(day=1);
-    first_day_str = first_day.strftime('%Y-%m-%d');
-
-    file_name = 'MRR_per_Subscriber_-_monthly_' + first_day_str + '_to_' + today_str +'.csv';
     with open(file_name, 'r', encoding='utf-8') as file:
         customers = csv.reader(file)
         next(customers)
