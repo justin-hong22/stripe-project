@@ -22,7 +22,7 @@ def addNewColumn(sheet):
     end_year = now.year;
     end_month = now.month;
 
-    if now.day == 1:
+    if now.day < 7:
         if now.month == 1:
             end_month = 12;
         else:
@@ -38,13 +38,15 @@ def addNewColumn(sheet):
 def createNewCustomerRow():
     output = [];
     current = datetime(2021, 3, 1);
-    now = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0);
+    now = datetime.now();
 
-    if now.day == 1:
+    if now.day < 7:
         if now.month == 1:
-            now = now.replace(year = now.year - 1, month = 12, day = 1);
+            now = now.replace(year = now.year - 1, month = 12, day = 1, hour = 0, minute = 0, second = 0, microsecond = 0);
         else:
-            now = now.replace(month = now.month - 1, day = 1);
+            now = now.replace(month = now.month - 1, day = 1, hour = 0, minute = 0, second = 0, microsecond = 0);
+    else:
+        now = now.replace(day=1, hour = 0, minute = 0, second = 0, microsecond = 0);
 
     while current < now:
         output.append(0);
@@ -55,7 +57,7 @@ def createNewCustomerRow():
 
 def getReportName():
     today = datetime.today();
-    if today.day == 1:
+    if today.day < 7:
         if today.month == 1:
             start_date = today.replace(year = today.year - 1, month = 12, day = 1);
         else:
