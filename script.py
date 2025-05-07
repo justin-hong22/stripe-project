@@ -73,6 +73,8 @@ def main():
     sheet = openSheet();
     new_col_index = addNewColumn(sheet);
     existing_customers = [c.strip().strip('"') for c in sheet.col_values(3)[1:]];
+    existing_end_dates = [e.strip().strip('"') for e in sheet.col_values(5)[1:]];
+    customer_enddate_map = {key : value for key, value in zip(existing_customers, existing_end_dates)};
     new_row_zeros = createNewCustomerRow();
     file_name = getReportName();
 
@@ -82,6 +84,7 @@ def main():
 
         updates = [];
         new_rows = [];
+        new_end_dates = [];
         for customer in customers:
             name = customer[0];
             email = customer[1];
@@ -97,6 +100,13 @@ def main():
                     'range': gspread.utils.rowcol_to_a1(row_index, new_col_index),
                     'values': [[mrr]]
                 });
+            
+                if end_date != customer_enddate_map.get(cus_id):
+                    new_end_dates.append({
+                        'range': gspread.utils.rowcol_to_a1(row_index, 5),
+                        'values': [[end_date]]
+                    })
+
             else:
                 row = [name, email, cus_id, start_date, end_date, currency] + new_row_zeros + [mrr];
                 new_rows.append(row);
@@ -107,6 +117,12 @@ def main():
                 'values': update['values']
             } for update in updates])
         
+        if new_end_dates:
+            sheet.batch_update([{
+                'range': new_end_dates['range'],
+                'values': new_end_dates['values']
+            } for new_end_dates in new_end_dates])
+
         if new_rows:
             sheet.append_rows(new_rows);
 
