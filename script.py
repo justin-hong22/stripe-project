@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv # type: ignore
 import stripe # type: ignore
 import gspread # type: ignore
 from oauth2client.service_account import ServiceAccountCredentials # type: ignore
@@ -28,7 +30,7 @@ def addNewColumn(sheet):
         else:
             end_month = now.month - 1;
 
-    col_index = ((end_year - start_year) * 12) + (end_month - start_month) + 7;
+    col_index = ((end_year - start_year) * 12) + (end_month - start_month) + 9;
     if col_index > sheet.col_count:
         sheet.add_cols(col_index - sheet.col_count);
         sheet.update_cell(1, col_index, str(end_year) + "-" + str(end_month));
@@ -70,6 +72,9 @@ def getReportName():
     return 'mrr_reports/MRR_per_Subscriber_-_monthly_' + first_day_str + '_to_' + today_str +'.csv';
 
 def main():
+    load_dotenv();
+    stripe.api_key = os.getenv('STRIPE_API_KEY');
+
     sheet = openSheet();
     new_col_index = addNewColumn(sheet);
     existing_customers = [c.strip().strip('"') for c in sheet.col_values(3)[1:]];
@@ -85,6 +90,8 @@ def main():
         updates = [];
         new_rows = [];
         new_end_dates = [];
+        most_recent_payments = [];
+        payment_intervals = [];
         for customer in customers:
             name = customer[0];
             email = customer[1];
@@ -93,6 +100,15 @@ def main():
             end_date = customer[4];
             currency = customer[5];
             mrr = customer[6];
+
+            subscription = stripe.Subscription.list(customer = cus_id, status='active', limit=1);
+            if subscription['data']:
+                recent_payment = subscription['data'][0]['current_period_start'];
+                recent_payment = datetime.fromtimestamp(recent_payment).strftime('%Y-%m-%d');
+                interval = subscription['data'][0]['items']['data'][0]['price']['recurring']['interval'];
+            else:
+                recent_payment = "N/A";
+                interval = "N/A";
 
             if cus_id in existing_customers:
                 row_index = existing_customers.index(cus_id) + 2;
@@ -106,10 +122,18 @@ def main():
                         'range': gspread.utils.rowcol_to_a1(row_index, 5),
                         'values': [[end_date]]
                     })
-
             else:
-                row = [name, email, cus_id, start_date, end_date, currency] + new_row_zeros + [mrr];
+                row = [name, email, cus_id, start_date, end_date, recent_payment, interval, currency] + new_row_zeros + [mrr];
                 new_rows.append(row);
+        
+            most_recent_payments.append({
+                'range': gspread.utils.rowcol_to_a1(row_index, 6),
+                'values': [[recent_payment]]
+            });
+            payment_intervals.append({
+                'range': gspread.utils.rowcol_to_a1(row_index, 7),
+                'values': [[interval]]
+            });
         
         if updates:
             sheet.batch_update([{
@@ -122,6 +146,18 @@ def main():
                 'range': new_end_dates['range'],
                 'values': new_end_dates['values']
             } for new_end_dates in new_end_dates])
+
+        if most_recent_payments:
+            sheet.batch_update([{
+                'range': most_recent_payments['range'],
+                'values': most_recent_payments['values']
+            } for most_recent_payments in most_recent_payments])
+
+        if payment_intervals:
+            sheet.batch_update([{
+                'range': payment_intervals['range'],
+                'values': payment_intervals['values']
+            } for payment_intervals in payment_intervals])
 
         if new_rows:
             sheet.append_rows(new_rows);
