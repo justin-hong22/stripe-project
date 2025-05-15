@@ -110,9 +110,6 @@ def main():
 
         updates = [];
         new_rows = [];
-        new_end_dates = [];
-        most_recent_payments = [];
-        payment_intervals = [];
         for customer in customers:
             name = customer[0];
             email = customer[1];
@@ -133,24 +130,14 @@ def main():
             if cus_id in existing_customers:
                 row_index = existing_customers.index(cus_id) + 2;
                 updates.append({'range': gspread.utils.rowcol_to_a1(row_index, new_col_index),'values': [[mrr]]});
-            
+                updates.append({'range': gspread.utils.rowcol_to_a1(row_index, 6),'values': [[recent_payment]]});
+                updates.append({'range': gspread.utils.rowcol_to_a1(row_index, 7),'values': [[interval]]});
                 if end_date != customer_enddate_map.get(cus_id):
-                    new_end_dates.append({
-                        'range': gspread.utils.rowcol_to_a1(row_index, 5),
-                        'values': [[end_date]]
-                    })
+                    updates.append({'range': gspread.utils.rowcol_to_a1(row_index, 5),'values': [[end_date]]});
+            
             else:
                 row = [name, email, cus_id, start_date, end_date, recent_payment, interval, currency] + new_row_zeros + [mrr];
                 new_rows.append(row);
-        
-            most_recent_payments.append({
-                'range': gspread.utils.rowcol_to_a1(row_index, 6),
-                'values': [[recent_payment]]
-            });
-            payment_intervals.append({
-                'range': gspread.utils.rowcol_to_a1(row_index, 7),
-                'values': [[interval]]
-            });
         
         if updates:
             sheet.batch_update([{
@@ -158,24 +145,6 @@ def main():
                 'values': update['values']
             } for update in updates])
         
-        if new_end_dates:
-            sheet.batch_update([{
-                'range': new_end_dates['range'],
-                'values': new_end_dates['values']
-            } for new_end_dates in new_end_dates])
-
-        if most_recent_payments:
-            sheet.batch_update([{
-                'range': most_recent_payments['range'],
-                'values': most_recent_payments['values']
-            } for most_recent_payments in most_recent_payments])
-
-        if payment_intervals:
-            sheet.batch_update([{
-                'range': payment_intervals['range'],
-                'values': payment_intervals['values']
-            } for payment_intervals in payment_intervals])
-
         if new_rows:
             sheet.append_rows(new_rows);
 
