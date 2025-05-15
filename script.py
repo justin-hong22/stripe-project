@@ -71,6 +71,26 @@ def getReportName():
     today_str = today.strftime('%Y-%m-%d');
     return 'mrr_reports/MRR_per_Subscriber_-_monthly_' + first_day_str + '_to_' + today_str +'.csv';
 
+def getSubscriptions():
+    subscriptions = {};
+    has_more = True;
+    starting_after = None;
+
+    while has_more:
+        response = stripe.Subscription.list(status='active', limit = 100, starting_after = starting_after);
+        for sub in response['data']:
+            customer_id = sub['customer'];
+            subscriptions[customer_id] = {
+                'current_period_start': sub['current_period_start'],
+                'interval': sub['items']['data'][0]['price']['recurring']['interval']
+            }
+
+        has_more = response['has_more'];
+        if response['data']:
+            starting_after = response['data'][-1]['id'];
+
+    return subscriptions;
+
 def main():
     load_dotenv();
     stripe.api_key = os.getenv('STRIPE_API_KEY');
@@ -82,6 +102,7 @@ def main():
     customer_enddate_map = {key : value for key, value in zip(existing_customers, existing_end_dates)};
     new_row_zeros = createNewCustomerRow();
     file_name = getReportName();
+    subscriptions = getSubscriptions();
 
     with open(file_name, 'r', encoding='utf-8') as file:
         customers = csv.reader(file)
@@ -100,22 +121,18 @@ def main():
             end_date = customer[4];
             currency = customer[5];
             mrr = customer[6];
-
-            subscription = stripe.Subscription.list(customer = cus_id, status='active', limit=1);
-            if subscription['data']:
-                recent_payment = subscription['data'][0]['current_period_start'];
-                recent_payment = datetime.fromtimestamp(recent_payment).strftime('%Y-%m-%d');
-                interval = subscription['data'][0]['items']['data'][0]['price']['recurring']['interval'];
+            
+            subscription = subscriptions.get(cus_id);
+            if subscription:
+                recent_payment = datetime.fromtimestamp(subscription['current_period_start']).strftime('%Y-%m-%d');
+                interval = subscription['interval'];
             else:
-                recent_payment = "N/A";
-                interval = "N/A";
+                recent_payment = 'N/A';
+                interval = 'N/A';
 
             if cus_id in existing_customers:
                 row_index = existing_customers.index(cus_id) + 2;
-                updates.append({
-                    'range': gspread.utils.rowcol_to_a1(row_index, new_col_index),
-                    'values': [[mrr]]
-                });
+                updates.append({'range': gspread.utils.rowcol_to_a1(row_index, new_col_index),'values': [[mrr]]});
             
                 if end_date != customer_enddate_map.get(cus_id):
                     new_end_dates.append({
@@ -162,5 +179,6 @@ def main():
         if new_rows:
             sheet.append_rows(new_rows);
 
+    print("Writing MRR to Google Sheet has been completed");
 if __name__ == "__main__":
   main()
